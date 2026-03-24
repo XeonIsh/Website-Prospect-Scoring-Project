@@ -1,0 +1,11 @@
+# Data files
+list New.csv
+MasterList_Score.xlsx
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# IDE
+.vscode/
