@@ -125,10 +125,16 @@ def process_website(website):
 
     try:
         response = requests.get(clean_url, timeout=10, headers=HEADERS)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        encoding = response.encoding or 'utf-8'
+        soup = BeautifulSoup(response.content, 'html.parser', from_encoding=encoding)
         html_text = response.text
 
-        row_data["Brand Name"] = get_brand_name(soup)
+        brand_name = get_brand_name(soup)
+        try:
+            brand_name = brand_name.encode('latin-1').decode('utf-8')
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            pass
+        row_data["Brand Name"] = brand_name
         fb, ig, tt = find_social_urls(soup)
         row_data["Facebook Account URL"] = fb
         row_data["Instagram URL"] = ig

@@ -19,94 +19,45 @@ def get_handle_from_ig(ig_url):
     return handle.split('?')[0].strip('/')
 
 
-async def check_meta_ads_production(page, handle, website_url):
+async def check_meta_ads(page, handle, website_url):
     region = "GB" if isinstance(website_url, str) and ".co.uk" in website_url else "US"
-    base_url = f"https://www.facebook.com/ads/library/?country={region}"
+    url = (
+        f"https://www.facebook.com/ads/library/"
+        f"?active_status=active&ad_type=all&country={region}"
+        f"&is_targeted_country=false&media_type=all&q={handle}"
+        f"&search_type=keyword_unordered"
+    )
 
     try:
-        await page.goto(base_url, wait_until="domcontentloaded", timeout=60000)
+        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
         print("   [i] Page loaded. Waiting 3s for hydration...")
         await page.wait_for_timeout(3000)
 
+        if "facebook.com/login" in page.url or "facebook.com/checkpoint" in page.url:
+            print("   [!] Redirected to login. Stopping.")
+            return "NO"
+
         search_input = page.get_by_placeholder("Search by keyword or advertiser")
-
-        if not await search_input.is_visible():
-            print("   [i] Search bar locked. Scanning icons...")
-
-            icon_selector = '//div[contains(@style, "mask-position: 0px -") and contains(@style, "px")]'
-            try:
-                await page.wait_for_selector(icon_selector, timeout=5000)
-                icons = page.locator(icon_selector)
-                icon_count = await icons.count()
-
-                category_unlocked = False
-                for i in range(icon_count):
-                    try:
-                        await icons.nth(i).click()
-                        await page.wait_for_timeout(500)
-
-                        all_ads = page.locator('span:has-text("All ads")').first
-                        if await all_ads.is_visible():
-                            await all_ads.click()
-                            print("   [+] Success! 'All ads' selected.")
-                            category_unlocked = True
-                            await page.wait_for_timeout(1000)
-                            break
-                        else:
-                            await page.keyboard.press("Escape")
-                            await page.wait_for_timeout(300)
-                    except Exception:
-                        pass
-
-                if not category_unlocked:
-                    print("   [!] Could not unlock category.")
-            except Exception:
-                pass
 
         try:
             await search_input.wait_for(state="visible", timeout=10000)
             await search_input.click()
-            await search_input.fill("")
-            await page.keyboard.type(handle, delay=50)
-            print(f"   [i] Typed '{handle}'. Waiting for dropdown...")
+            print("   [i] Search bar clicked. Waiting for dropdown...")
         except Exception:
-            print("   [!] Search bar never unlocked.")
+            print("   [!] Search bar not visible.")
             return "NO"
 
         style_selector = "//div[contains(@style, '-webkit-line-clamp: 1')]"
         try:
-            await page.wait_for_selector(style_selector, timeout=5000)
+            await page.wait_for_selector(style_selector, timeout=10000)
         except Exception:
             print("   [!] Dropdown didn't appear.")
             return "NO"
 
-        candidates = page.locator(style_selector)
-        count = await candidates.count()
-        found_and_clicked = False
-
-        for i in range(min(5, count)):
-            element = candidates.nth(i)
-            text_content = (await element.text_content()).lower().strip()
-
-            if f"@{handle.lower()}" in text_content or handle.lower() == text_content:
-                print(f"   [+] Match: '{text_content}' -> Clicking")
-                await element.click()
-                found_and_clicked = True
-                break
-
-        if not found_and_clicked:
-            for i in range(min(5, count)):
-                element = candidates.nth(i)
-                text_content = (await element.text_content()).lower().strip()
-                if handle.lower() in text_content:
-                    print(f"   [+] Fuzzy Match: '{text_content}' -> Clicking")
-                    await element.click()
-                    found_and_clicked = True
-                    break
-
-        if not found_and_clicked:
-            print("   [-] No handle match found.")
-            return "NO"
+        first = page.locator(style_selector).first
+        text_content = (await first.text_content()).strip()
+        print(f"   [+] Selecting first result: '{text_content}'")
+        await first.click()
 
         await page.reload()
         await page.wait_for_load_state("domcontentloaded")
@@ -136,7 +87,7 @@ async def process_meta_row(page, idx, row, total_rows):
         handle = str(row['Website']).replace('https://', '').replace('www.', '').split('.')[0]
 
     print(f"[{idx+1}/{total_rows}] Processing: {handle}")
-    status = await check_meta_ads_production(page, handle, row['Website'])
+    status = await check_meta_ads(page, handle, row['Website'])
     print(f"   -> Result: {status}\n")
     await asyncio.sleep(random.uniform(1, 2))
     return idx, status
@@ -158,7 +109,7 @@ async def launch_worker(playwright):
     return browser, page
 
 
-async def run_production_crawl():
+async def run_test_crawl():
     input_file = 'list New.csv'
     output_file = 'MasterList_Score.xlsx'
 
@@ -168,7 +119,6 @@ async def run_production_crawl():
         print("Input file not found.")
         return
 
-    # Build work list
     work = []
     total_rows = len(df)
     for idx, row in df.iterrows():
@@ -207,7 +157,6 @@ async def run_production_crawl():
                     for row_idx, status in results:
                         df.at[row_idx, 'Meta Sponsored Activity'] = status
 
-                    # Safe save
                     while True:
                         try:
                             df.to_csv(input_file, index=False)
@@ -227,9 +176,8 @@ async def run_production_crawl():
                     except Exception:
                         pass
 
-    print("\n✅ Level 5 Complete.")
+    print("\n✅ Level 5.1 Test Complete.")
 
-    # --- CONVERT CSV TO EXCEL ---
     print(f"\n--- Converting to Excel ---")
     try:
         df_final = pd.read_csv(input_file, encoding='latin-1', dtype=str)
@@ -253,4 +201,4 @@ if __name__ == "__main__":
     import os
     script_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(script_dir)
-    asyncio.run(run_production_crawl())
+    asyncio.run(run_test_crawl())
