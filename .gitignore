@@ -1,6 +1,6 @@
 # Data files
-list New.csv
-MasterList_Score.xlsx
+*.csv
+*.xlsx
 
 # Python
 venv/
